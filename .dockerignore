@@ -1,0 +1,8 @@
+node_modules
+data
+*.mp4
+*.wav
+*.json
+*.srt
+!package.json
+!package-lock.json

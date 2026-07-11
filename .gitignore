@@ -1,0 +1,8 @@
+node_modules/
+data/
+videos/
+hindiToRoman/
+*.mp4
+*.wav
+*.srt
+transcript*.json

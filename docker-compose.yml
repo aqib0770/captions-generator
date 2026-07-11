@@ -1,0 +1,38 @@
+services:
+  whisper:
+    build:
+      context: .
+      dockerfile: Dockerfile.whisper
+    volumes:
+      - ./data:/data
+      - whisper-models:/root/.cache/huggingface
+    environment:
+      - WHISPER_MODEL=large
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
+
+  formatter:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    volumes:
+      - ./data:/data
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=qwen2.5:7b-instruct
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+
+  ffmpeg:
+    image: linuxserver/ffmpeg:latest
+    volumes:
+      - ./data:/data
+
+volumes:
+  whisper-models:
+  ollama-models:
