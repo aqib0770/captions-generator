@@ -1,4 +1,5 @@
 node_modules
+dist
 data
 *.mp4
 *.wav
@@ -6,3 +7,4 @@ data
 *.srt
 !package.json
 !package-lock.json
+!tsconfig.json
