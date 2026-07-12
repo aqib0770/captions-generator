@@ -1,8 +1,8 @@
 services:
   whisper:
     build:
-      context: .
-      dockerfile: Dockerfile.whisper
+      context: ./docker/whisper
+      dockerfile: Dockerfile
     volumes:
       - ./data:/data
       - whisper-models:/root/.cache/huggingface
@@ -14,7 +14,7 @@ services:
   formatter:
     build:
       context: .
-      dockerfile: Dockerfile.node
+      dockerfile: docker/node/Dockerfile
     volumes:
       - ./data:/data
     environment:
