@@ -3,10 +3,15 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node cli.js"
+    "build": "tsc",
+    "start": "node dist/cli.js"
   },
   "dependencies": {
     "ollama": "^0.5.0",
     "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
   }
 }
