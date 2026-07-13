@@ -8,6 +8,7 @@ const PROJECT_DIR: string = path.resolve(__dirname, "..");
 const COMPOSE: string = `docker compose -f ${path.join(PROJECT_DIR, "docker-compose.yml")}`;
 const DATA_DIR: string = path.join(PROJECT_DIR, "data");
 const MODEL: string = process.env.OLLAMA_MODEL || "qwen2.5:7b-instruct";
+const SUPPORTED_EXTENSIONS: string[] = [".mp4", ".mkv", ".webm", ".avi", ".mov"];
 
 function run(cmd: string): void {
   execSync(cmd, { stdio: "inherit" });
@@ -34,7 +35,13 @@ function main(): void {
     process.exit(1);
   }
 
-  const name: string = path.basename(inputVideo, ".mp4");
+  const ext: string = path.extname(inputVideo).toLowerCase();
+  if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+    console.error(`Error: unsupported format "${ext}" — supported: ${SUPPORTED_EXTENSIONS.join(", ")}`);
+    process.exit(1);
+  }
+
+  const name: string = path.basename(inputVideo, ext);
   outputVideo = outputVideo || path.join(path.dirname(inputVideo), `${name}-captioned.mp4`);
 
   if (!fs.existsSync(inputVideo)) {
@@ -42,30 +49,55 @@ function main(): void {
     process.exit(1);
   }
 
+  // Check Docker is running
+  try {
+    execSync("docker info", { stdio: "ignore" });
+  } catch {
+    console.error("Error: Docker is not running. Start Docker and try again.");
+    process.exit(1);
+  }
+
   fs.mkdirSync(DATA_DIR, { recursive: true });
+
+  // Copy input to data dir so containers can access it
+  fs.copyFileSync(inputVideo, path.join(DATA_DIR, `${name}${ext}`));
+
+  // Check input has an audio track
+  console.log("Checking input file...");
+  try {
+    const result = execSync(
+      `ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "${inputVideo}"`,
+      { stdio: "pipe" }
+    ).toString().trim();
+    if (!result.includes("audio")) {
+      console.error("Error: input file has no audio track");
+      process.exit(1);
+    }
+  } catch (err: any) {
+    console.error(`Error: could not probe input file — ${err.stderr?.toString().trim() || "is it a valid video?"}`);
+    process.exit(1);
+  }
+  console.log("Input OK");
 
   // Container paths
   const wav: string = `/data/${name}.wav`;
   const transcript: string = `/data/${name}.transcript.json`;
   const roman: string = `/data/${name}.roman.json`;
-  const srt: string = `/data/${name}.srt`;
+  const ass: string = `/data/${name}.ass`;
 
   // Host paths for verification
   const hostWav: string = path.join(DATA_DIR, `${name}.wav`);
   const hostTranscript: string = path.join(DATA_DIR, `${name}.transcript.json`);
   const hostRoman: string = path.join(DATA_DIR, `${name}.roman.json`);
-  const hostSrt: string = path.join(DATA_DIR, `${name}.srt`);
+  const hostAss: string = path.join(DATA_DIR, `${name}.ass`);
 
   console.log(`Input:  ${inputVideo}`);
   console.log(`Output: ${outputVideo}`);
 
-  // Copy input to data dir so containers can access it
-  fs.copyFileSync(inputVideo, path.join(DATA_DIR, `${name}.mp4`));
-
   // Step 1: Extract audio
   console.log("Extracting audio...");
   run(
-    `${COMPOSE} run --rm ffmpeg -y -i /data/${name}.mp4 -vn -acodec pcm_s16le -ar 44100 -ac 2 ${wav}`
+    `${COMPOSE} run --rm ffmpeg -y -i /data/${name}${ext} -vn -acodec pcm_s16le -ar 44100 -ac 2 ${wav}`
   );
   if (!fs.existsSync(hostWav)) {
     console.error("Error: audio extraction failed");
@@ -111,14 +143,14 @@ function main(): void {
   }
   console.log("Romanization done");
 
-  // Step 4: Generate SRT
-  console.log("Generating SRT...");
-  run(`${COMPOSE} run --rm formatter node jsontosrt.js ${roman} ${srt}`);
-  if (!fs.existsSync(hostSrt)) {
-    console.error("Error: SRT generation failed");
+  // Step 4: Generate ASS
+  console.log("Generating ASS...");
+  run(`${COMPOSE} run --rm formatter node jsontoass.js ${roman} ${ass}`);
+  if (!fs.existsSync(hostAss)) {
+    console.error("Error: ASS generation failed");
     process.exit(1);
   }
-  console.log("SRT generated");
+  console.log("ASS generated");
 
   // Stop Ollama before ffmpeg to free memory
   run(`${COMPOSE} stop ollama`);
@@ -126,7 +158,7 @@ function main(): void {
   // Step 5: Burn subtitles
   console.log("Burning subtitles...");
   run(
-    `${COMPOSE} run --rm ffmpeg -y -i /data/${name}.mp4 -vf "subtitles=${srt}:force_style='FontSize=24'" -c:a copy /data/${name}-captioned.mp4`
+    `${COMPOSE} run --rm ffmpeg -y -i /data/${name}${ext} -vf "ass=${ass}" -c:a copy /data/${name}-captioned.mp4`
   );
   fs.copyFileSync(path.join(DATA_DIR, `${name}-captioned.mp4`), outputVideo);
   if (!fs.existsSync(outputVideo)) {
