@@ -1,19 +1,22 @@
 import fs from "fs/promises";
 import { Ollama } from "ollama";
 import { z } from "zod";
-import type { Segment, RomanizedSegment } from "./types.js";
+import type { Segment } from "./types.js";
 
-const INPUT: string = process.argv[2] || "transcript.json";
-const OUTPUT: string = process.argv[3] || "transcript-roman.json";
-const OLLAMA_HOST: string = process.env.OLLAMA_HOST || "http://localhost:11434";
-const MODEL: string = process.env.OLLAMA_MODEL || "qwen2.5:7b-instruct";
+const INPUT = process.argv[2] || "transcript.json";
+const OUTPUT = process.argv[3] || "transcript-roman.json";
 
-if (!INPUT || !OUTPUT) {
-  console.error("Usage: node format.js <input.json> <output.json>");
-  process.exit(1);
+const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434";
+
+let MODEL = process.env.OLLAMA_MODEL || "qwen3.5:9b";
+
+for (let i = 4; i < process.argv.length; i++) {
+  if (process.argv[i] === "--model") {
+    MODEL = process.argv[++i] || MODEL;
+  }
 }
 
-// ---------- Zod Schemas ----------
+// ---------------- Schemas ----------------
 
 const RomanizedWordSchema = z
   .object({
@@ -28,128 +31,190 @@ const RomanizedSegmentSchema = z
   })
   .strict();
 
-const RomanizedTranscriptSchema = z.array(RomanizedSegmentSchema);
+const client = new Ollama({
+  host: OLLAMA_HOST,
+});
 
-// ---------- Read transcript ----------
+// ---------------- Prompt ----------------
+const SYSTEM_PROMPT = `
+You are a deterministic Hindi Romanization engine.
 
+You are NOT allowed to think about meaning.
+You are NOT allowed to rewrite sentences.
+
+Your only task is to replace Devanagari words with their Roman Hindi equivalents.
+
+Rules:
+
+1. Copy every English word EXACTLY as received.
+2. Copy every number EXACTLY.
+3. Copy punctuation EXACTLY.
+4. Transliterate ONLY words written in Devanagari.
+5. Never translate.
+6. Never correct grammar.
+7. Never improve spelling.
+8. Never merge words.
+9. Never split words.
+10. Never add words.
+11. Never remove words.
+12. Every input word produces exactly one output word.
+13. Preserve capitalization of English words.
+14. Return ONLY valid JSON.
+
+The context field is read-only.
+
+Never copy from it.
+
+Never rewrite it.
+
+Never use it to replace input words.
+
+Only use it when deciding the Roman spelling of a Devanagari word.
+
+Examples
+
+Input:
+
+{
+"context":"Let's say आपका एक server है",
+"words":[
+{"text":"Let's"},
+{"text":"say"},
+{"text":"आपका"},
+{"text":"एक"},
+{"text":"server"},
+{"text":"है"}
+]}
+
+Output:
+
+[
+{"text":"Let's"},
+{"text":"say"},
+{"text":"aapka"},
+{"text":"ek"},
+{"text":"server"},
+{"text":"hai"}
+]
+
+Input
+
+{
+"context":"So, the flow is कि user आएगा",
+"words":[
+"So,",
+"the",
+"flow",
+"is",
+"कि",
+"user",
+"आएगा"
+]}
+
+Output:
+
+[
+{"text":"So,"},
+{"text":"the"},
+{"text":"flow"},
+{"text":"is"},
+{"text":"ki"},
+{"text":"user"},
+{"text":"aayega"}
+]
+`;
+
+// ---------------- Romanize ----------------
+
+async function romanizeSegment(
+  segment: Segment,
+): Promise<z.infer<typeof RomanizedSegmentSchema>> {
+  const payload = {
+    id: segment.id,
+    context: segment.sentence,
+    words: segment.words.map((w) => ({
+      text: w.text,
+    })),
+  };
+
+  const stream = await client.chat({
+    model: MODEL,
+    stream: true,
+    think: false,
+    messages: [
+      {
+        role: "system",
+        content: SYSTEM_PROMPT,
+      },
+      {
+        role: "user",
+        content: JSON.stringify(payload),
+      },
+    ],
+    format: z.toJSONSchema(RomanizedSegmentSchema),
+    options: {
+      temperature: 0,
+    },
+  });
+
+  let content = "";
+
+  for await (const chunk of stream) {
+    process.stdout.write(chunk.message.content);
+    content += chunk.message.content;
+  }
+
+  console.log();
+
+  return RomanizedSegmentSchema.parse(JSON.parse(content));
+}
+
+// ---------------- Main ----------------
+console.log(`Using ${MODEL}...`);
 console.log(`Reading ${INPUT}...`);
 
 const transcript: Segment[] = JSON.parse(await fs.readFile(INPUT, "utf8"));
 
 console.log(`Loaded ${transcript.length} segments`);
 
-// ---------- Build LLM input ----------
+const output: Segment[] = [];
 
-const llmInput = transcript.map((segment) => ({
-  id: segment.id,
-  sentence: segment.sentence,
-  words: segment.words.map(({ text }) => ({ text })),
-}));
-
-// ---------- Call Ollama ----------
-
-console.log(`Sending to Ollama at ${OLLAMA_HOST} (model: ${MODEL})...`);
-
-const client = new Ollama({ host: OLLAMA_HOST });
-
-const stream = await client.chat({
-  model: MODEL,
-  stream: true,
-  think: false,
-  messages: [
-    {
-      role: "system",
-      content: `
-You are a Hindi Romanization engine.
-
-Rules:
-
-- Transliterate ONLY Devanagari Hindi words into natural Roman Hindi.
-- Do NOT translate.
-- Preserve English words exactly.
-- Preserve punctuation exactly.
-- Preserve the order of words.
-- Preserve ids.
-- Each segment MUST have exactly the same number of words as the input.
-- Ignore the sentence field except as context.
-- Return ONLY valid JSON matching the provided schema.
-`,
-    },
-    {
-      role: "user",
-      content: JSON.stringify(llmInput),
-    },
-  ],
-  format: z.toJSONSchema(RomanizedTranscriptSchema),
-  options: {
-    temperature: 0,
-  },
-});
-
-// ---------- Read streamed response ----------
-
-let content = "";
-
-console.log("\nResponse:\n");
-
-for await (const chunk of stream) {
-  process.stdout.write(chunk.message.content);
-  content += chunk.message.content;
-}
-
-console.log("\n\nResponse complete");
-
-// ---------- Parse & validate ----------
-
-console.log("Validating JSON...");
-
-const romanized: RomanizedSegment[] = RomanizedTranscriptSchema.parse(
-  JSON.parse(content)
-);
-
-console.log("JSON valid");
-
-// ---------- Merge with word count validation ----------
-
-console.log("Merging with original transcript...");
-
-let mismatchCount = 0;
-
-const output: Segment[] = transcript.map((segment, i) => {
-  const romanSeg = romanized[i];
-
-  if (!romanSeg) {
-    console.error(
-      `Error: LLM returned ${romanized.length} segments, expected ${transcript.length}. Segment ${i + 1} missing.`
-    );
-    return segment;
-  }
-
-  if (romanSeg.words.length !== segment.words.length) {
-    mismatchCount++;
-    console.error(
-      `Warning: Segment ${segment.id} word count mismatch — expected ${segment.words.length}, got ${romanSeg.words.length}. Keeping original text for missing words.`
-    );
-  }
-
-  return {
-    ...segment,
-    words: segment.words.map((word, j) => ({
-      ...word,
-      text: romanSeg.words[j]?.text ?? word.text,
-    })),
-  };
-});
-
-if (mismatchCount > 0) {
-  console.error(
-    `Warning: ${mismatchCount} segment(s) had word count mismatches`
+for (const segment of transcript) {
+  const hasHindi = segment.words.some((word) =>
+    /[\u0900-\u097F]/.test(word.text),
   );
-}
+  if (!hasHindi) {
+    output.push(segment);
+    continue;
+  }
 
-// ---------- Save ----------
+  let romanized;
+
+  try {
+    romanized = await romanizeSegment(segment);
+  } catch (err) {
+    console.log("\nRetrying...\n");
+    romanized = await romanizeSegment(segment);
+  }
+
+  if (romanized.words.length !== segment.words.length) {
+    console.warn(
+      `Word count mismatch in segment ${segment.id}. Keeping original words.`,
+    );
+
+    output.push(segment);
+    continue;
+  }
+
+  output.push({
+    ...segment,
+    words: segment.words.map((word, i) => ({
+      ...word,
+      text: romanized.words[i].text,
+    })),
+  });
+}
 
 await fs.writeFile(OUTPUT, JSON.stringify(output, null, 2));
 
-console.log(`Saved ${OUTPUT}`);
-console.log("Done!");
+console.log(`\nSaved ${OUTPUT}`);
