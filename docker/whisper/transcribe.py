@@ -41,6 +41,7 @@ def main():
         beam_size=5,
         vad_filter=True,
         word_timestamps=True,
+        language="hi"
     )
 
     segments = list(segments)
