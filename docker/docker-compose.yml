@@ -3,10 +3,10 @@ name: caption-test
 services:
   whisper:
     build:
-      context: ./docker/whisper
+      context: whisper
       dockerfile: Dockerfile
     volumes:
-      - ./data:/data
+      - ../data:/data
       - whisper-models:/root/.cache/huggingface
     environment:
       - WHISPER_MODEL=large
@@ -15,10 +15,10 @@ services:
 
   formatter:
     build:
-      context: .
+      context: ..
       dockerfile: docker/cli.Dockerfile
     volumes:
-      - ./data:/data
+      - ../data:/data
     environment:
       - TRANSLITERATION_SERVICE_URL=http://host.docker.internal:5000/transliterate
     extra_hosts:
@@ -27,7 +27,7 @@ services:
   ffmpeg:
     image: linuxserver/ffmpeg:latest
     volumes:
-      - ./data:/data
+      - ../data:/data
 
 volumes:
   whisper-models:
