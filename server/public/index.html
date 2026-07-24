@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Caption Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>AI Video Captions</h1>
+            <p>Generate stunning, hard-coded subtitles automatically.</p>
+        </header>
+
+        <main class="card">
+            <!-- State 1: Upload -->
+            <section id="upload-state" class="state-section active">
+                <div class="drop-zone" id="drop-zone">
+                    <input type="file" id="file-input" accept="video/*" hidden>
+                    <div class="upload-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                    </div>
+                    <h3>Drag & drop your video</h3>
+                    <p class="file-limit">MP4, MOV up to 30MB</p>
+                    <div class="selected-file" id="selected-file" style="display: none;"></div>
+                    <button class="btn btn-outline" id="browse-btn">Browse Files</button>
+                    <button class="btn btn-primary" id="upload-btn" style="display: none;">Generate Captions</button>
+                </div>
+            </section>
+
+            <!-- State 2: Processing -->
+            <section id="processing-state" class="state-section" style="display: none;">
+                <div class="stepper">
+                    <div class="step" data-step="extracting">
+                        <div class="step-icon"></div>
+                        <div class="step-content">
+                            <h4>Extracting Audio</h4>
+                            <p class="step-desc">Separating audio track from video</p>
+                        </div>
+                    </div>
+                    <div class="step" data-step="transcribing">
+                        <div class="step-icon"></div>
+                        <div class="step-content">
+                            <h4>Transcribing</h4>
+                            <p class="step-desc">Running Whisper AI model</p>
+                        </div>
+                    </div>
+                    <div class="step" data-step="romanizing">
+                        <div class="step-icon"></div>
+                        <div class="step-content">
+                            <h4>Romanizing</h4>
+                            <p class="step-desc">Converting text for subtitles</p>
+                        </div>
+                    </div>
+                    <div class="step" data-step="generating">
+                        <div class="step-icon"></div>
+                        <div class="step-content">
+                            <h4>Generating Subtitles</h4>
+                            <p class="step-desc">Aligning text with timestamps</p>
+                        </div>
+                    </div>
+                    <div class="step" data-step="burning">
+                        <div class="step-icon"></div>
+                        <div class="step-content">
+                            <h4>Burning into Video</h4>
+                            <p class="step-desc">Rendering final video</p>
+                        </div>
+                    </div>
+                    <div class="step" data-step="complete">
+                        <div class="step-icon"></div>
+                        <div class="step-content">
+                            <h4>Complete</h4>
+                            <p class="step-desc">Ready for download</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- State 3: Complete -->
+            <section id="complete-state" class="state-section" style="display: none;">
+                <div class="success-container">
+                    <div class="success-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="url(#success-gradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <defs>
+                                <linearGradient id="success-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#a855f7" />
+                                    <stop offset="100%" stop-color="#06b6d4" />
+                                </linearGradient>
+                            </defs>
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                        </svg>
+                    </div>
+                    <h2>Video Ready!</h2>
+                    <p>Your hard-coded captions have been successfully rendered.</p>
+                    <a href="#" class="btn btn-primary btn-download" id="download-btn" download>Download Video</a>
+                    <button class="btn btn-outline" id="start-over-btn">Caption Another</button>
+                </div>
+            </section>
+
+            <!-- State 4: Error -->
+            <section id="error-state" class="state-section" style="display: none;">
+                <div class="error-container">
+                    <div class="error-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                    </div>
+                    <h2>Processing Failed</h2>
+                    <p id="error-message">Something went wrong during processing.</p>
+                    <button class="btn btn-outline" id="retry-btn">Try Again</button>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Rate limit: 3 uploads/hour • Powered by Groq</p>
+        </footer>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
