@@ -3,11 +3,11 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const __dirname: string = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_DIR: string = path.resolve(__dirname, "..");
-const COMPOSE: string = `docker compose -f ${path.join(PROJECT_DIR, "docker-compose.yml")}`;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_DIR: string = path.resolve(__dirname, "../..");
+const COMPOSE: string = `docker compose -f ${path.join(PROJECT_DIR, "docker", "docker-compose.yml")}`;
 const DATA_DIR: string = path.join(PROJECT_DIR, "data");
-const DEFAULT_MODEL = "qwen2.5:7b-instruct";
 const SUPPORTED_EXTENSIONS: string[] = [
   ".mp4",
   ".mkv",
@@ -24,15 +24,12 @@ function main(): void {
   let inputVideo: string | undefined;
   let outputVideo: string | undefined;
   let whisperModel = "large";
-  let model = DEFAULT_MODEL;
 
   for (let i = 2; i < process.argv.length; i++) {
     const arg = process.argv[i];
 
     if (arg === "--whisper-model") {
       whisperModel = process.argv[++i] || whisperModel;
-    } else if (arg === "--model") {
-      model = process.argv[++i] || model;
     } else if (!inputVideo) {
       inputVideo = path.resolve(arg);
     } else if (!outputVideo) {
@@ -42,7 +39,7 @@ function main(): void {
 
   if (!inputVideo) {
     console.log(
-      "Usage: node cli.js <input.mp4> [output.mp4] [--model <ollama-model>] [--whisper-model <size>]",
+      "Usage: node cli.js <input.mp4> [output.mp4] [--whisper-model <size>]",
     );
     process.exit(1);
   }
@@ -116,7 +113,6 @@ function main(): void {
 
   console.log(`Input:  ${inputVideo}`);
   console.log(`Output: ${outputVideo}`);
-  console.log(`Ollama Model: ${model}`);
   console.log(`Whisper Model: ${whisperModel}`);
 
   // Step 1: Extract audio
@@ -145,34 +141,10 @@ function main(): void {
 
   console.log("Transcription done");
 
-  // Start Ollama after Whisper completes
-  run(`${COMPOSE} up -d ollama`);
-
-  console.log("Waiting for Ollama...");
-  for (let i = 0; i < 60; i++) {
-    try {
-      execSync(`${COMPOSE} exec -T ollama ollama list`, {
-        stdio: "ignore",
-      });
-      break;
-    } catch {
-      if (i === 59) {
-        console.error("Error: Ollama did not start in time");
-        process.exit(1);
-      }
-      execSync("sleep 1");
-    }
-  }
-
-  console.log("Ollama ready");
-
-  console.log(`Pulling model ${model}...`);
-  run(`${COMPOSE} exec -T ollama ollama pull ${model}`);
-
-  // Step 3: Romanize
+  // Step 3: Romanize using transliteration service
   console.log("Romanizing...");
   run(
-    `${COMPOSE} run --rm formatter node format.js ${transcript} ${roman} --model "${model}"`,
+    `${COMPOSE} run --rm formatter node cli/format.js ${transcript} ${roman}`,
   );
 
   if (!fs.existsSync(hostRoman)) {
@@ -184,7 +156,7 @@ function main(): void {
 
   // Step 4: Generate ASS
   console.log("Generating ASS...");
-  run(`${COMPOSE} run --rm formatter node jsontoass.js ${roman} ${ass}`);
+  run(`${COMPOSE} run --rm formatter node cli/jsontoass.js ${roman} ${ass}`);
 
   if (!fs.existsSync(hostAss)) {
     console.error("Error: ASS generation failed");
@@ -192,9 +164,6 @@ function main(): void {
   }
 
   console.log("ASS generated");
-
-  // Stop Ollama before ffmpeg to free memory
-  run(`${COMPOSE} stop ollama`);
 
   // Step 5: Burn subtitles
   console.log("Burning subtitles...");
