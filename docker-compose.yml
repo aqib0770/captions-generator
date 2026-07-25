@@ -17,12 +17,11 @@ services:
     build:
       context: .
       dockerfile: docker/cli.Dockerfile
+    network_mode: "host"
     volumes:
       - ./data:/data
     environment:
-      - TRANSLITERATION_SERVICE_URL=http://host.docker.internal:5000/transliterate
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - TRANSLITERATION_SERVICE_URL=${TRANSLITERATION_SERVICE_URL:-http://localhost:5000/transliterate}
 
   ffmpeg:
     image: linuxserver/ffmpeg:latest

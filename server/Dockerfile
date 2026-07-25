@@ -24,7 +24,6 @@ COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist/ ./dist/
-COPY public/ ./public/
 
 # Cloud Run expects port 8080
 EXPOSE 8080
