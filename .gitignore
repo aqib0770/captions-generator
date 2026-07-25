@@ -5,3 +5,4 @@ data/
 *.wav
 *.srt
 transcript*.json
+.env
