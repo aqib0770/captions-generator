@@ -86,7 +86,8 @@ export async function handleCaption(
 
   const ext = path.extname(req.file.originalname).toLowerCase();
   const inputPath = path.join(jobDir, `input${ext}`);
-  fs.renameSync(req.file.path, inputPath);
+  fs.copyFileSync(req.file.path, inputPath);
+  try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
 
   // Switch to SSE mode
   res.setHeader("Content-Type", "text/event-stream");
