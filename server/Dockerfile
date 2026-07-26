@@ -13,7 +13,7 @@ RUN npx tsc
 # ---- Stage 2: Production ----
 FROM node:20-slim
 
-# Install FFmpeg (the only system dependency)
+# ffmpeg is the only system dependency
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
@@ -21,12 +21,15 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev && npm cache clean --force
 
-COPY --from=builder /app/dist/ ./dist/
+COPY --from=builder --chown=node:node /app/dist/ ./dist/
 
-# Cloud Run expects port 8080
-EXPOSE 8080
-ENV PORT=8080
+# Run as the built-in non-root user
+USER node
+
+ENV NODE_ENV=production
+ENV PORT=3000
+EXPOSE 3000
 
 CMD ["node", "dist/server.js"]

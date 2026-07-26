@@ -1,33 +1,16 @@
-name: caption-test
-
 services:
-  whisper:
+  server:
     build:
-      context: ./docker/whisper
+      context: ./server
       dockerfile: Dockerfile
-    volumes:
-      - ./data:/data
-      - whisper-models:/root/.cache/huggingface
+    container_name: caption-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
     environment:
-      - WHISPER_MODEL=large
-      - WHISPER_DEVICE=cpu
-      - WHISPER_COMPUTE_TYPE=int8
-
-  formatter:
-    build:
-      context: .
-      dockerfile: docker/cli.Dockerfile
-    network_mode: "host"
-    volumes:
-      - ./data:/data
-    environment:
-      - TRANSLITERATION_SERVICE_URL=${TRANSLITERATION_SERVICE_URL:-http://localhost:5000/transliterate}
-
-  ffmpeg:
-    image: linuxserver/ffmpeg:latest
-    volumes:
-      - ./data:/data
-
-volumes:
-  whisper-models:
-    name: caption-test_whisper-models
+      - NODE_ENV=production
+      - PORT=3000
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - WHISPER_MODEL=${WHISPER_MODEL:-whisper-large-v3-turbo}
+    tmpfs:
+      - /tmp
