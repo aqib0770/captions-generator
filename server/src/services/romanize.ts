@@ -1,93 +1,143 @@
+import Groq from "groq-sdk";
+import { z } from "zod";
 import type { Segment } from "../types/index.js";
 
-const TRANSLITERATION_SERVICE_URL =
-  process.env.TRANSLITERATION_SERVICE_URL || "http://localhost:5000/transliterate";
-
-interface TransliterationResponse {
-  words: string[];
-}
+const ROMANIZE_MODEL = "openai/gpt-oss-20b";
 
 /**
- * Transliterate an array of Hindi (Devanagari) words into Roman script
- * by calling the external transliteration service.
+ * Regex that matches words containing at least one non-Latin character.
+ * This catches Hindi (Devanagari), Arabic, Cyrillic, CJK, etc.
+ * Words that are purely ASCII/Latin (English) are left untouched.
  */
-export async function transliterateWords(
-  words: string[],
-  lang = "hi",
-): Promise<string[]> {
+const NON_ENGLISH_RE = /[^\u0000-\u007F\u00C0-\u024F]/;
+
+/**
+ * Zod schema for the structured LLM response.
+ * The model MUST return exactly this shape — an object with a single
+ * `words` array of strings.
+ */
+const TransliterationSchema = z.object({
+  words: z.array(z.string()),
+});
+
+/**
+ * Transliterate an array of non-English words into Roman script
+ * using Groq's openai/gpt-oss-20b model with strict structured output.
+ *
+ * The model is prompted to ONLY transliterate (phonetic conversion),
+ * never translate or explain.
+ */
+async function transliterateWithLLM(words: string[]): Promise<string[]> {
   if (words.length === 0) return [];
 
-  const response = await fetch(TRANSLITERATION_SERVICE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      lang,
-      words,
-    }),
+  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+  const response = await groq.chat.completions.create({
+    model: ROMANIZE_MODEL,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You are a transliteration engine.",
+          "You receive a JSON array of words in non-Latin scripts (e.g. Devanagari, Arabic, etc.).",
+          "For each word, output its phonetic transliteration in the Roman/Latin alphabet.",
+          "",
+          "STRICT RULES:",
+          "- ONLY transliterate (phonetic conversion to Roman script). Do NOT translate meaning.",
+          "- Do NOT explain, comment, or add any extra text.",
+          "- Preserve the exact order of words.",
+          "- Output EXACTLY the same number of words as the input array.",
+          "- Each output word must be the romanized pronunciation of the corresponding input word.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: JSON.stringify(words),
+      },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "word_transliteration",
+        schema: z.toJSONSchema(TransliterationSchema),
+      },
+    } as any,
+    temperature: 0,
   });
 
-  if (!response.ok) {
-    throw new Error(
-      `Transliteration service request failed with status ${response.status}: ${response.statusText}`,
-    );
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error("Empty response from transliteration model");
   }
 
-  const data = (await response.json()) as TransliterationResponse;
-
-  if (!data || !Array.isArray(data.words)) {
-    throw new Error("Invalid response format received from transliteration service");
-  }
-
-  return data.words;
+  const parsed = TransliterationSchema.parse(JSON.parse(content));
+  return parsed.words;
 }
 
 /**
- * Romanize Hindi words in all segments using the transliteration HTTP service.
- * English words and segments without Hindi are passed through unchanged.
+ * Romanize non-English words in all segments using Groq LLM.
+ *
+ * For each segment:
+ * 1. Identify non-English words (anything with non-Latin characters).
+ * 2. Send only those words to the LLM for transliteration.
+ * 3. Compare the output array length with the input array length.
+ *    - If they match → splice the romanized words back into position.
+ *    - If they DON'T match → keep original words as-is (even if Hindi).
+ * 4. English words are never sent to the LLM and always kept unchanged.
  */
 export async function romanize(segments: Segment[]): Promise<Segment[]> {
   console.log(
-    `Romanizing ${segments.length} segments using transliteration service (${TRANSLITERATION_SERVICE_URL})...`,
+    `Romanizing ${segments.length} segments using Groq ${ROMANIZE_MODEL}...`,
   );
-
+  console.log("Segments", segments)
   const output: Segment[] = [];
 
   for (const segment of segments) {
-    const hindiWords = segment.words.filter((word) =>
-      /[\u0900-\u097F]/.test(word.text),
-    );
-
-    if (hindiWords.length === 0) {
+    // Identify non-English words and their indices
+    const nonEnglishEntries: { index: number; text: string }[] = [];
+    for (let i = 0; i < segment.words.length; i++) {
+      if (NON_ENGLISH_RE.test(segment.words[i].text)) {
+        nonEnglishEntries.push({ index: i, text: segment.words[i].text });
+      }
+    }
+    console.log("Non english entries", nonEnglishEntries)
+    // If no non-English words, pass through unchanged
+    if (nonEnglishEntries.length === 0) {
       output.push(segment);
       continue;
     }
-
+    console.log("outpu", output)
     try {
-      const romanizedWords = await transliterateWords(
-        hindiWords.map((w) => w.text),
-      );
+      const wordsToTransliterate = nonEnglishEntries.map((e) => e.text);
+      console.log("Words to transliterate", wordsToTransliterate)
+      const romanizedWords = await transliterateWithLLM(wordsToTransliterate);
+      console.log("Romanized words", romanizedWords)
+      // console.log(
+      //   `Segment ${segment.id}: sent ${wordsToTransliterate.length} words, got ${romanizedWords.length} back`,
+      // );
 
-      if (romanizedWords.length !== hindiWords.length) {
+      console.log("Words to transliterate length", wordsToTransliterate.length)
+      console.log("Romanize words length", romanizedWords.length)
+
+      // Length safety check — if mismatch, keep ALL original words
+      if (romanizedWords.length !== wordsToTransliterate.length) {
         console.warn(
           `Word count mismatch in segment ${segment.id} ` +
-            `(got ${romanizedWords.length}, expected ${hindiWords.length}). Keeping original.`,
+            `(sent ${wordsToTransliterate.length}, got ${romanizedWords.length}). ` +
+            `Keeping original words.`,
         );
         output.push(segment);
         continue;
       }
 
-      let hindiIndex = 0;
-      const newWords = segment.words.map((word) => {
-        if (/[\u0900-\u097F]/.test(word.text)) {
-          return {
-            ...word,
-            text: romanizedWords[hindiIndex++],
-          };
-        }
-        return word;
-      });
+      // Splice romanized words back into their correct positions
+      const newWords = [...segment.words];
+      for (let i = 0; i < nonEnglishEntries.length; i++) {
+        newWords[nonEnglishEntries[i].index] = {
+          ...newWords[nonEnglishEntries[i].index],
+          text: romanizedWords[i],
+        };
+      }
 
       output.push({
         ...segment,
