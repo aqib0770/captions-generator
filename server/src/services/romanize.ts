@@ -89,7 +89,6 @@ export async function romanize(segments: Segment[]): Promise<Segment[]> {
   console.log(
     `Romanizing ${segments.length} segments using Groq ${ROMANIZE_MODEL}...`,
   );
-  console.log("Segments", segments)
   const output: Segment[] = [];
 
   for (const segment of segments) {
@@ -100,24 +99,16 @@ export async function romanize(segments: Segment[]): Promise<Segment[]> {
         nonEnglishEntries.push({ index: i, text: segment.words[i].text });
       }
     }
-    console.log("Non english entries", nonEnglishEntries)
+
     // If no non-English words, pass through unchanged
     if (nonEnglishEntries.length === 0) {
       output.push(segment);
       continue;
     }
-    console.log("outpu", output)
+
     try {
       const wordsToTransliterate = nonEnglishEntries.map((e) => e.text);
-      console.log("Words to transliterate", wordsToTransliterate)
       const romanizedWords = await transliterateWithLLM(wordsToTransliterate);
-      console.log("Romanized words", romanizedWords)
-      // console.log(
-      //   `Segment ${segment.id}: sent ${wordsToTransliterate.length} words, got ${romanizedWords.length} back`,
-      // );
-
-      console.log("Words to transliterate length", wordsToTransliterate.length)
-      console.log("Romanize words length", romanizedWords.length)
 
       // Length safety check — if mismatch, keep ALL original words
       if (romanizedWords.length !== wordsToTransliterate.length) {
