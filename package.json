@@ -1,0 +1,21 @@
+{
+  "name": "caption-test",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.1",
+  "scripts": {
+    "dev:cloud": "pnpm --filter @caption/cloud-server dev",
+    "dev:local": "pnpm --filter @caption/local-server dev",
+    "dev:web": "pnpm --filter @caption/web dev",
+    "start:cloud": "pnpm --filter @caption/cloud-server start",
+    "start:local": "pnpm --filter @caption/local-server start",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "oxlint": "^1.71.0",
+    "prettier": "^3.6.2"
+  }
+}

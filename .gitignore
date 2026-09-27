@@ -4,8 +4,10 @@ data/
 *.mp4
 *.wav
 *.srt
+*.ass
 transcript*.json
 **/node_modules/
 **/dist/
 .env
 **/.env
+cache/

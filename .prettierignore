@@ -1,0 +1,14 @@
+node_modules/
+**/node_modules/
+**/dist/
+pnpm-lock.yaml
+data/
+*.mp4
+*.wav
+*.ass
+*.srt
+public/
+**/public/
+src/assets/
+**/*.png
+**/*.svg
