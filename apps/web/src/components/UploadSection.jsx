@@ -1,18 +1,13 @@
-import React, { useState, useRef } from 'react';
-
-interface UploadSectionProps {
-  onUpload: (file: File) => void;
-  onError: (msg: string) => void;
-}
+import { useState, useRef } from "react";
 
 const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB
 
-export const UploadSection: React.FC<UploadSectionProps> = ({ onUpload, onError }) => {
+export const UploadSection = ({ onUpload, onError }) => {
   const [isDragOver, setIsDragOver] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const fileInputRef = useRef(null);
 
-  const validateAndSetFile = (file: File) => {
+  const validateAndSetFile = (file) => {
     if (!file.name.match(/\.(mp4|mkv|webm|avi|mov)$/i)) {
       onError("Unsupported format. Please upload MP4, MKV, WebM, AVI, or MOV.");
       return;
@@ -26,19 +21,19 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onUpload, onError 
     setSelectedFile(file);
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(true);
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
@@ -47,7 +42,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onUpload, onError 
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       validateAndSetFile(e.target.files[0]);
     }
@@ -62,18 +57,12 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onUpload, onError 
   return (
     <section className="state-section">
       <div
-        className={`drop-zone ${isDragOver ? 'dragover' : ''}`}
+        className={`drop-zone ${isDragOver ? "dragover" : ""}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <input
-          type="file"
-          ref={fileInputRef}
-          accept="video/*"
-          hidden
-          onChange={handleFileChange}
-        />
+        <input type="file" ref={fileInputRef} accept="video/*" hidden onChange={handleFileChange} />
 
         <div className="upload-icon-container">
           <svg
@@ -97,11 +86,20 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onUpload, onError 
 
         {selectedFile && (
           <div className="selected-file-badge">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth="2"
+            >
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
             </svg>
-            <span>{selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)</span>
+            <span>
+              {selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)
+            </span>
           </div>
         )}
 
@@ -111,15 +109,11 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onUpload, onError 
             className="btn btn-outline"
             onClick={() => fileInputRef.current?.click()}
           >
-            {selectedFile ? 'Change File' : 'Browse Files'}
+            {selectedFile ? "Change File" : "Browse Files"}
           </button>
 
           {selectedFile && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleStartUpload}
-            >
+            <button type="button" className="btn btn-primary" onClick={handleStartUpload}>
               Generate Captions
             </button>
           )}

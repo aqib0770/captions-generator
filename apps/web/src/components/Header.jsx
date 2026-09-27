@@ -1,6 +1,4 @@
-import React from 'react';
-
-export const Header: React.FC = () => {
+export const Header = () => {
   return (
     <header className="app-header">
       <div className="brand-badge">
