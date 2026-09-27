@@ -1,0 +1,17 @@
+{
+  "name": "@caption/cli",
+  "version": "2.0.0",
+  "type": "module",
+  "bin": {
+    "caption": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js --help",
+    "lint": "oxlint src"
+  },
+  "dependencies": {
+    "@caption/core": "workspace:*",
+    "@caption/providers-groq": "workspace:*",
+    "@caption/providers-ollama": "workspace:*"
+  }
+}
