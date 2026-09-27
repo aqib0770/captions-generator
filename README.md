@@ -31,7 +31,7 @@ node --version   # v22 on host (containers use node:20-slim + ffmpeg)
 pnpm --version   # v10
 ffmpeg -version  # only for host runs (CLI / pnpm dev); Docker images already include it
 ffprobe -version # same as above
-ollama --version # only for the local stack
+ollama --version # only for host/CLI local use (compose provides its own ollama)
 ```
 
 Get a Groq key for the cloud path: https://console.groq.com/keys
@@ -93,23 +93,18 @@ curl -OJ http://localhost:3000/api/download/<jobId>
 
 ### 1B. Local (Ollama + whisper docker) — `local` profile
 
-`whisper` (`caption-whisper`, `9000:9000`, `whisper-cache:/root/.cache`) + `local-server` (`caption-local-server`, `3001:3001`) both have `profiles: [local]`. `local-server` has `depends_on: whisper` and hard-codes `LOCAL_WHISPER_API_URL=http://whisper:9000` (compose DNS). `OLLAMA_HOST` defaults to `http://host.docker.internal:11434` so the container reaches Ollama on your host.
+No host installs — everything runs in compose. `whisper` (`caption-whisper`, `:9000`, `whisper-cache`) + `ollama` (`caption-ollama`, `:11434`, `ollama-data`) + `local-server` (`caption-local-server`, `:3001`) all have `profiles: [local]`. Inside the compose network `local-server` talks to `http://whisper:9000` and `http://ollama:11434` automatically.
 
-One-time on host:
+> Needs ~4GB+ RAM (whisper `base` + `qwen2.5:1.5b` models). Not for the 1GB demo host — this is the "clone and run at home" path.
 
-```bash
-ollama pull qwen2.5:1.5b
-ollama serve &
-curl http://127.0.0.1:11434/api/tags  # sanity check
-```
-
-Start (starts cloud + whisper + local together):
+Start:
 
 ```bash
 docker compose --profile local up -d --build
+# One-time: pull the LLM into the ollama volume
+docker exec caption-ollama ollama pull qwen2.5:1.5b
 curl http://localhost:3001/health
 # {"status":"ok","engine":"ollama-local",...}
-curl http://localhost:3000/health  # cloud still up alongside
 ```
 
 Use it — same API, different port:
@@ -122,10 +117,11 @@ curl -OJ http://localhost:3001/api/download/<jobId>
 
 Notes:
 
-- To run **only** local (skip cloud): `docker compose --profile local up -d --build whisper local-server`.
-- `ASR_MODEL=base`, `ASR_ENGINE=faster_whisper` in `.env` control whisper quality. Larger models are slower but more accurate.
-- If Ollama runs elsewhere (another host/container), set `OLLAMA_HOST` in `.env` — compose passes it through.
-- Manual `docker run ... onerahmet/openai-whisper-asr-webservice` also works for CLI-only use (see §3), but compose is canonical: named volume + fixed container names + `depends_on`.
+- Plain `docker compose up -d` still starts **only** cloud — the local services don't even get created, so zero idle waste on the demo host.
+- `--profile local` also starts cloud alongside. To run **only** local: `docker compose --profile local up -d --build whisper ollama local-server`.
+- `ASR_MODEL=base`, `ASR_ENGINE=faster_whisper` in `.env` control whisper quality. Larger models are slower but more accurate. `OLLAMA_LLM_MODEL` picks the LLM.
+- Stop host Ollama first if you have one — compose publishes `11434` and will fail to bind on conflict. To keep Ollama on the host instead, set `OLLAMA_HOST=http://host.docker.internal:11434` in `.env`.
+- Manual `docker run ... onerahmet/openai-whisper-asr-webservice` still works for CLI-only use (see §3), but compose is canonical: named volumes + fixed container names + `depends_on`.
 
 ## 2. Web UI
 
@@ -178,7 +174,8 @@ GROQ_API_KEY=your_key_here CAPTION_PROVIDER=groq \
   node apps/cli/src/index.js rec.mp4 /tmp/cli-groq.mp4
 ```
 
-Ollama (whisper in Docker, LLM in Ollama — no PyTorch on host):
+Ollama (whisper in Docker, LLM in Ollama — no PyTorch on host).
+Tip: if the compose local stack is already up (§1B), point at it instead — `OLLAMA_HOST=http://127.0.0.1:11434 LOCAL_WHISPER_API_URL=http://127.0.0.1:9000` already match the published ports, no manual containers needed.
 
 ```bash
 # if you are NOT using compose, start whisper once manually:
@@ -289,28 +286,28 @@ event: error     data: {"message":"..."}
 
 ## Env vars
 
-| Var                      | Used by             | Required        | Default (host / compose)                                                                  | Description                                                          |
-| ------------------------ | ------------------- | --------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `GROQ_API_KEY`           | groq server + CLI   | **yes (cloud)** | —                                                                                         | Groq API key                                                         |
-| `WHISPER_MODEL`          | groq                | no              | `whisper-large-v3-turbo`                                                                  | Groq Whisper model                                                   |
-| `ROMANIZE_MODEL`         | groq                | no              | `openai/gpt-oss-20b`                                                                      | Groq LLM for transliteration                                         |
-| `CAPTION_PROVIDER`       | CLI only            | no              | `groq`                                                                                    | Default when `--provider` omitted                                    |
-| `OLLAMA_HOST`            | ollama server + CLI | no              | host: `http://127.0.0.1:11434` / compose: `http://host.docker.internal:11434`             | Ollama daemon URL                                                    |
-| `OLLAMA_LLM_MODEL`       | ollama              | no              | `qwen2.5:1.5b`                                                                            | Ollama LLM for transliteration                                       |
-| `LOCAL_WHISPER_API_URL`  | ollama              | no              | CLI/host: `http://127.0.0.1:9000` / compose `local-server`: `http://whisper:9000` (fixed) | Whisper docker API URL                                               |
-| `LOCAL_WHISPER_LANGUAGE` | ollama              | no              | `hi`                                                                                      | Source language (`hi`, `ur`, …)                                      |
-| `LOCAL_WHISPER_MODE`     | ollama              | no              | `http`                                                                                    | `http` (docker) or `cli` (local binary)                              |
-| `LOCAL_WHISPER_CMD`      | ollama/cli-mode     | no              | `whisper`                                                                                 | Local whisper binary (cli mode only)                                 |
-| `LOCAL_WHISPER_MODEL`    | ollama/cli-mode     | no              | `base`                                                                                    | Local whisper model (cli mode only)                                  |
-| `ASR_MODEL`              | whisper container   | no              | `base`                                                                                    | Compose `whisper` model                                              |
-| `ASR_ENGINE`             | whisper container   | no              | `faster_whisper`                                                                          | Compose `whisper` engine                                             |
-| `PORT`                   | servers             | no              | cloud `3000`, local `3001`                                                                | Listen port                                                          |
-| `MAX_CONCURRENT`         | servers             | no              | `2` (use `1` on 1GB hosts)                                                                | Parallel ffmpeg jobs (always-on safety, never disabled)              |
-| `RATE_PER_IP`            | servers             | no              | `3`                                                                                       | Demo quota: uploads per IP per window                                |
-| `RATE_WINDOW_MS`         | servers             | no              | `3600000` (1h)                                                                            | Per-IP window                                                        |
-| `RATE_DAILY_MAX`         | servers             | no              | `20`                                                                                      | Demo quota: global uploads per day                                   |
-| `DISABLE_QUOTA`          | servers             | no              | empty (quota on)                                                                          | `true` disables demo quota for self-host (concurrency still applies) |
-| `VITE_API_URL`           | web                 | no              | empty (proxy to `:3000`)                                                                  | e.g. `http://127.0.0.1:3001` for local                               |
+| Var                      | Used by             | Required        | Default (host / compose)                                                                                                    | Description                                                          |
+| ------------------------ | ------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `GROQ_API_KEY`           | groq server + CLI   | **yes (cloud)** | —                                                                                                                           | Groq API key                                                         |
+| `WHISPER_MODEL`          | groq                | no              | `whisper-large-v3-turbo`                                                                                                    | Groq Whisper model                                                   |
+| `ROMANIZE_MODEL`         | groq                | no              | `openai/gpt-oss-20b`                                                                                                        | Groq LLM for transliteration                                         |
+| `CAPTION_PROVIDER`       | CLI only            | no              | `groq`                                                                                                                      | Default when `--provider` omitted                                    |
+| `OLLAMA_HOST`            | ollama server + CLI | no              | host/CLI: `http://127.0.0.1:11434` / compose: `http://ollama:11434` (`host.docker.internal` if you keep Ollama on the host) | Ollama daemon URL                                                    |
+| `OLLAMA_LLM_MODEL`       | ollama              | no              | `qwen2.5:1.5b`                                                                                                              | Ollama LLM for transliteration                                       |
+| `LOCAL_WHISPER_API_URL`  | ollama              | no              | CLI/host: `http://127.0.0.1:9000` / compose `local-server`: `http://whisper:9000` (fixed)                                   | Whisper docker API URL                                               |
+| `LOCAL_WHISPER_LANGUAGE` | ollama              | no              | `hi`                                                                                                                        | Source language (`hi`, `ur`, …)                                      |
+| `LOCAL_WHISPER_MODE`     | ollama              | no              | `http`                                                                                                                      | `http` (docker) or `cli` (local binary)                              |
+| `LOCAL_WHISPER_CMD`      | ollama/cli-mode     | no              | `whisper`                                                                                                                   | Local whisper binary (cli mode only)                                 |
+| `LOCAL_WHISPER_MODEL`    | ollama/cli-mode     | no              | `base`                                                                                                                      | Local whisper model (cli mode only)                                  |
+| `ASR_MODEL`              | whisper container   | no              | `base`                                                                                                                      | Compose `whisper` model                                              |
+| `ASR_ENGINE`             | whisper container   | no              | `faster_whisper`                                                                                                            | Compose `whisper` engine                                             |
+| `PORT`                   | servers             | no              | cloud `3000`, local `3001`                                                                                                  | Listen port                                                          |
+| `MAX_CONCURRENT`         | servers             | no              | `2` (use `1` on 1GB hosts)                                                                                                  | Parallel ffmpeg jobs (always-on safety, never disabled)              |
+| `RATE_PER_IP`            | servers             | no              | `3`                                                                                                                         | Demo quota: uploads per IP per window                                |
+| `RATE_WINDOW_MS`         | servers             | no              | `3600000` (1h)                                                                                                              | Per-IP window                                                        |
+| `RATE_DAILY_MAX`         | servers             | no              | `20`                                                                                                                        | Demo quota: global uploads per day                                   |
+| `DISABLE_QUOTA`          | servers             | no              | empty (quota on)                                                                                                            | `true` disables demo quota for self-host (concurrency still applies) |
+| `VITE_API_URL`           | web                 | no              | empty (proxy to `:3000`)                                                                                                    | e.g. `http://127.0.0.1:3001` for local                               |
 
 CLI: prefix vars on the command line (no `.env`). Servers/compose: set them in `.env` (see `.env.example`).
 
@@ -345,7 +342,9 @@ From `packages/core/src/config.js`, `packages/server-kit/src/concurrency.js` + `
 | `413 File too large`                                          | Over 30 MB — compress or trim video                                                                                                                     |
 | `404 Job not found or expired`                                | Download after 10 min TTL or wrong base URL (`:3000` vs `:3001`)                                                                                        |
 | Web `Backend server is unreachable`                           | No server on expected port — start compose or set `VITE_API_URL`                                                                                        |
-| `OLLAMA_HOST` `127.0.0.1` fails from container                | Inside compose use `http://host.docker.internal:11434` (default); `127.0.0.1` is only for host CLI/dev                                                  |
+| `OLLAMA_HOST` `127.0.0.1` fails from container                | Inside compose use `http://ollama:11434` (default); `127.0.0.1` is only for host CLI/dev. `host.docker.internal` only if Ollama runs on the host        |
+| Compose `ollama` fails to start (port in use)                 | Stop host Ollama first (`11434` conflict), or point compose at it via `OLLAMA_HOST` and drop the `ollama` service from the `up` command                 |
+| Local `transliterate` fails with model-not-found              | Pull it once: `docker exec caption-ollama ollama pull qwen2.5:1.5b`                                                                                     |
 
 ## Stop / clean
 

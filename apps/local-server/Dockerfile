@@ -1,8 +1,9 @@
 # Pure JS — no build step. Multi-stage: reproducible install + pnpm deploy,
 # then a slim runtime with only ffmpeg and prod files.
-# NOTE: whisper runs in its own docker service (see compose `whisper`)
-# and ollama is expected on the host (or OLLAMA_HOST) — neither is
-# baked in here. Only ffmpeg (audio extract + subtitle burn) is local.
+# NOTE: whisper + ollama run in their own docker services
+# (see compose `whisper` / `ollama`) — neither is baked in here.
+# OLLAMA_HOST overrides the URL when ollama lives elsewhere.
+# Only ffmpeg (audio extract + subtitle burn) is local.
 # ---- Stage 1: install + deploy ----
 FROM node:20-slim AS deployer
 

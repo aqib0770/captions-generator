@@ -30,6 +30,17 @@ services:
     profiles:
       - local
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: caption-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    profiles:
+      - local
+
   local-server:
     build:
       context: .
@@ -41,12 +52,13 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
       - OLLAMA_LLM_MODEL=${OLLAMA_LLM_MODEL:-qwen2.5:1.5b}
       - LOCAL_WHISPER_API_URL=http://whisper:9000
       - LOCAL_WHISPER_LANGUAGE=${LOCAL_WHISPER_LANGUAGE:-hi}
     depends_on:
       - whisper
+      - ollama
     tmpfs:
       - /tmp
     profiles:
@@ -54,3 +66,4 @@ services:
 
 volumes:
   whisper-cache:
+  ollama-data:
