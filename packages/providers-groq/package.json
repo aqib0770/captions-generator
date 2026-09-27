@@ -1,0 +1,16 @@
+{
+  "name": "@caption/providers-groq",
+  "version": "2.0.0",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "lint": "oxlint src"
+  },
+  "dependencies": {
+    "groq-sdk": "^0.18.0",
+    "zod": "^4.0.0"
+  }
+}
