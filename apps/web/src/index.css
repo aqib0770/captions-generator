@@ -92,6 +92,33 @@ body {
   font-size: 0.95rem;
 }
 
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  background: var(--bg-subtle);
+  padding: 0.4rem 0.85rem;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.repo-link:hover {
+  color: #ffffff;
+  border-color: #ffffff;
+}
+
+.repo-link svg {
+  flex-shrink: 0;
+}
+
 /* Card */
 .app-card {
   background-color: var(--bg-card);
@@ -369,6 +396,14 @@ body {
   max-width: 420px;
 }
 
+.result-video {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background-color: #000000;
+  max-height: 360px;
+}
+
 /* Footer */
 .app-footer {
   text-align: center;
@@ -377,4 +412,12 @@ body {
   color: var(--text-muted);
   font-size: 0.8rem;
   font-family: var(--font-mono);
+}
+
+.app-footer a {
+  color: var(--text-secondary);
+}
+
+.app-footer a:hover {
+  color: #ffffff;
 }

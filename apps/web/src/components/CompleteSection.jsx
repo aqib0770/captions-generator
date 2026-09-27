@@ -18,9 +18,9 @@ export const CompleteSection = ({ downloadUrl, onReset }) => {
       </div>
 
       <h2>Video Ready!</h2>
-      <p>
-        Your hard-coded captions have been successfully rendered and burned into the video file.
-      </p>
+      <p>Preview available for 10 minutes — download to keep it.</p>
+
+      <video className="result-video" controls playsInline preload="metadata" src={downloadUrl} />
 
       <div
         style={{

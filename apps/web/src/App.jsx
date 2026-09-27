@@ -41,7 +41,8 @@ export const App = () => {
         const contentType = response.headers.get("content-type") || "";
         if (contentType.includes("application/json")) {
           const errorData = await response.json();
-          throw new Error(errorData.error || `Server returned ${response.status}`);
+          const base = errorData.error || `Server returned ${response.status}`;
+          throw new Error(errorData.selfHost ? `${base} ${errorData.selfHost}` : base);
         }
         throw new Error(`Server returned ${response.status}: ${response.statusText}`);
       }
@@ -88,7 +89,12 @@ export const App = () => {
             setStage(data.stage);
           } else if (eventType === "done" && data && data.downloadUrl) {
             setStage("complete");
-            setDownloadUrl(data.downloadUrl);
+            // Server returns a relative path — prefix with the API origin so
+            // the player/download link works when VITE_API_URL is cross-origin.
+            const rawUrl = data.downloadUrl;
+            setDownloadUrl(
+              rawUrl.startsWith("http") ? rawUrl : (import.meta.env.VITE_API_URL || "") + rawUrl,
+            );
             setTimeout(() => {
               setAppState("complete");
             }, 800);
@@ -128,7 +134,17 @@ export const App = () => {
       </main>
 
       <footer className="app-footer">
-        <p>Rate limit: 3 uploads/hour • Powered by Groq / Ollama</p>
+        <p>
+          Demo: 3 uploads/hour •{" "}
+          <a
+            href="https://github.com/aqib0770/captions-generator/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Clone the repo
+          </a>{" "}
+          for unlimited use
+        </p>
       </footer>
     </div>
   );
