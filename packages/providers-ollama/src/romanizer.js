@@ -5,7 +5,7 @@ function client() {
 }
 
 function llmModel() {
-  return process.env.OLLAMA_LLM_MODEL || "qwen2.5:7b";
+  return process.env.OLLAMA_LLM_MODEL || "qwen2.5:1.5b";
 }
 
 const SYSTEM_PROMPT = [
