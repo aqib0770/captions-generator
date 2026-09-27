@@ -146,7 +146,7 @@ How it connects (`apps/web/src/App.jsx:34`, `apps/web/vite.config.js:9-14`):
 VITE_API_URL=http://127.0.0.1:3001 pnpm --filter @caption/web dev
 ```
 
-- `downloadUrl` from the server is relative (`/api/download/:jobId`). The UI uses it as `href` directly, so same-origin works; cross-origin builds need `VITE_API_URL` prefix.
+- `downloadUrl` from the server is relative (`/api/download/:jobId`). The UI prefixes it with `VITE_API_URL` when set, so cross-origin builds work. After processing, the UI shows the video in an embedded player automatically (paused, with controls) — no click needed.
 
 ## 3. CLI (host, no server)
 
@@ -241,11 +241,11 @@ pnpm start:local
 
 All paths served by `packages/server-kit/src/factory.js`, provider injected by `apps/cloud-server/src/index.js` (`groq-cloud`) or `apps/local-server/src/index.js` (`ollama-local`).
 
-| Method | Path                   | Description                                                                                               |
-| ------ | ---------------------- | --------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/health`, `/healthz`  | `{"status":"ok","engine":...,"uptime":...}`. Use for compose checks.                                      |
-| `POST` | `/api/caption`         | `multipart/form-data`, field `video`. Streams SSE, ends with `done`. Errors before streaming return JSON. |
-| `GET`  | `/api/download/:jobId` | File download `captioned.mp4`. `404` if missing/expired.                                                  |
+| Method | Path                   | Description                                                                                                                                                                        |
+| ------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/health`, `/healthz`  | `{"status":"ok","engine":...,"uptime":...}`. Use for compose checks.                                                                                                               |
+| `POST` | `/api/caption`         | `multipart/form-data`, field `video`. Streams SSE, ends with `done`. Errors before streaming return JSON.                                                                          |
+| `GET`  | `/api/download/:jobId` | Inline `video/mp4` (`Content-Disposition: inline`, range requests supported) — previews in `<video>`, or save via the UI's Download button / `curl -OJ`. `404` if missing/expired. |
 
 curl cheat-sheet:
 
@@ -271,6 +271,12 @@ curl -OJ http://localhost:3001/api/download/<jobId>
 # typical error (JSON, not SSE)
 curl -s -X POST http://localhost:3000/api/caption | jq .
 # {"error":"No video file provided."}
+
+# friendly 429 when busy / demo quota hit (JSON + Retry-After header)
+curl -s -i -F "video=@rec.mp4" http://localhost:3000/api/caption | head -20
+# HTTP/1.1 429 Too Many Requests
+# Retry-After: 120
+# {"error":"Server is busy ...","selfHost":"This is a small demo ...","retryAfterSeconds":120}
 ```
 
 SSE event shapes:
@@ -283,57 +289,63 @@ event: error     data: {"message":"..."}
 
 ## Env vars
 
-| Var                      | Used by             | Required        | Default (host / compose)                                                                  | Description                             |
-| ------------------------ | ------------------- | --------------- | ----------------------------------------------------------------------------------------- | --------------------------------------- |
-| `GROQ_API_KEY`           | groq server + CLI   | **yes (cloud)** | —                                                                                         | Groq API key                            |
-| `WHISPER_MODEL`          | groq                | no              | `whisper-large-v3-turbo`                                                                  | Groq Whisper model                      |
-| `ROMANIZE_MODEL`         | groq                | no              | `openai/gpt-oss-20b`                                                                      | Groq LLM for transliteration            |
-| `CAPTION_PROVIDER`       | CLI only            | no              | `groq`                                                                                    | Default when `--provider` omitted       |
-| `OLLAMA_HOST`            | ollama server + CLI | no              | host: `http://127.0.0.1:11434` / compose: `http://host.docker.internal:11434`             | Ollama daemon URL                       |
-| `OLLAMA_LLM_MODEL`       | ollama              | no              | `qwen2.5:1.5b`                                                                            | Ollama LLM for transliteration          |
-| `LOCAL_WHISPER_API_URL`  | ollama              | no              | CLI/host: `http://127.0.0.1:9000` / compose `local-server`: `http://whisper:9000` (fixed) | Whisper docker API URL                  |
-| `LOCAL_WHISPER_LANGUAGE` | ollama              | no              | `hi`                                                                                      | Source language (`hi`, `ur`, …)         |
-| `LOCAL_WHISPER_MODE`     | ollama              | no              | `http`                                                                                    | `http` (docker) or `cli` (local binary) |
-| `LOCAL_WHISPER_CMD`      | ollama/cli-mode     | no              | `whisper`                                                                                 | Local whisper binary (cli mode only)    |
-| `LOCAL_WHISPER_MODEL`    | ollama/cli-mode     | no              | `base`                                                                                    | Local whisper model (cli mode only)     |
-| `ASR_MODEL`              | whisper container   | no              | `base`                                                                                    | Compose `whisper` model                 |
-| `ASR_ENGINE`             | whisper container   | no              | `faster_whisper`                                                                          | Compose `whisper` engine                |
-| `PORT`                   | servers             | no              | cloud `3000`, local `3001`                                                                | Listen port                             |
-| `VITE_API_URL`           | web                 | no              | empty (proxy to `:3000`)                                                                  | e.g. `http://127.0.0.1:3001` for local  |
+| Var                      | Used by             | Required        | Default (host / compose)                                                                  | Description                                                          |
+| ------------------------ | ------------------- | --------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `GROQ_API_KEY`           | groq server + CLI   | **yes (cloud)** | —                                                                                         | Groq API key                                                         |
+| `WHISPER_MODEL`          | groq                | no              | `whisper-large-v3-turbo`                                                                  | Groq Whisper model                                                   |
+| `ROMANIZE_MODEL`         | groq                | no              | `openai/gpt-oss-20b`                                                                      | Groq LLM for transliteration                                         |
+| `CAPTION_PROVIDER`       | CLI only            | no              | `groq`                                                                                    | Default when `--provider` omitted                                    |
+| `OLLAMA_HOST`            | ollama server + CLI | no              | host: `http://127.0.0.1:11434` / compose: `http://host.docker.internal:11434`             | Ollama daemon URL                                                    |
+| `OLLAMA_LLM_MODEL`       | ollama              | no              | `qwen2.5:1.5b`                                                                            | Ollama LLM for transliteration                                       |
+| `LOCAL_WHISPER_API_URL`  | ollama              | no              | CLI/host: `http://127.0.0.1:9000` / compose `local-server`: `http://whisper:9000` (fixed) | Whisper docker API URL                                               |
+| `LOCAL_WHISPER_LANGUAGE` | ollama              | no              | `hi`                                                                                      | Source language (`hi`, `ur`, …)                                      |
+| `LOCAL_WHISPER_MODE`     | ollama              | no              | `http`                                                                                    | `http` (docker) or `cli` (local binary)                              |
+| `LOCAL_WHISPER_CMD`      | ollama/cli-mode     | no              | `whisper`                                                                                 | Local whisper binary (cli mode only)                                 |
+| `LOCAL_WHISPER_MODEL`    | ollama/cli-mode     | no              | `base`                                                                                    | Local whisper model (cli mode only)                                  |
+| `ASR_MODEL`              | whisper container   | no              | `base`                                                                                    | Compose `whisper` model                                              |
+| `ASR_ENGINE`             | whisper container   | no              | `faster_whisper`                                                                          | Compose `whisper` engine                                             |
+| `PORT`                   | servers             | no              | cloud `3000`, local `3001`                                                                | Listen port                                                          |
+| `MAX_CONCURRENT`         | servers             | no              | `2` (use `1` on 1GB hosts)                                                                | Parallel ffmpeg jobs (always-on safety, never disabled)              |
+| `RATE_PER_IP`            | servers             | no              | `3`                                                                                       | Demo quota: uploads per IP per window                                |
+| `RATE_WINDOW_MS`         | servers             | no              | `3600000` (1h)                                                                            | Per-IP window                                                        |
+| `RATE_DAILY_MAX`         | servers             | no              | `20`                                                                                      | Demo quota: global uploads per day                                   |
+| `DISABLE_QUOTA`          | servers             | no              | empty (quota on)                                                                          | `true` disables demo quota for self-host (concurrency still applies) |
+| `VITE_API_URL`           | web                 | no              | empty (proxy to `:3000`)                                                                  | e.g. `http://127.0.0.1:3001` for local                               |
 
 CLI: prefix vars on the command line (no `.env`). Servers/compose: set them in `.env` (see `.env.example`).
 
 ## Limits
 
-From `packages/core/src/config.js`, `packages/server-kit/src/ratelimit.js`, `jobs.js` (also shown in web footer):
+From `packages/core/src/config.js`, `packages/server-kit/src/concurrency.js` + `quota.js`, `jobs.js` (also shown in web footer):
 
 - Max upload: **30 MB** (`413 File too large`).
 - Formats: `mp4, mkv, webm, avi, mov` (else `400 Unsupported format`).
-- Rate: **3 uploads/hour per IP**, **20/day globally**, **max 2 concurrent** (`429` + reason).
+- Concurrency: **max 2 parallel jobs** (`MAX_CONCURRENT`, use `1` on 1GB) — always-on safety, `429` + `Retry-After` when busy.
+- Demo quota: **3 uploads/hour per IP**, **20/day globally** (`RATE_PER_IP`, `RATE_DAILY_MAX`) — `429` + `selfHost` hint. Self-hosters can set `DISABLE_QUOTA=true` (concurrency still applies).
 - Downloads expire after **10 min** (`404 Job not found or expired`).
 
 ## Troubleshooting
 
-| Output                                                        | Meaning / fix                                                                                                           |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `Usage: caption ...` + exit 1                                 | Missing input file argument                                                                                             |
-| `Error: unknown provider "x"`                                 | Use `groq` or `ollama`                                                                                                  |
-| `Error: unsupported format ".txt"`                            | Extension not in `mp4, mkv, webm, avi, mov`                                                                             |
-| `Error: file not found`                                       | Input path is wrong                                                                                                     |
-| `Error: ffmpeg is not installed`                              | Install ffmpeg + ffprobe (host runs only)                                                                               |
-| `Error: input file has no audio track`                        | Video has no audio stream                                                                                               |
-| `GROQ_API_KEY is not set.`                                    | Cloud: set in `.env` (compose/servers) or `GROQ_API_KEY=...` prefix (CLI)                                               |
-| `Failed to transliterate segment N: 400 ...`                  | LLM rejected that batch — segment keeps original script, output still completes                                         |
-| `Whisper docker API unreachable at ...`                       | Whisper container not running — `docker compose --profile local up -d whisper` (compose) or `docker run ...` (CLI-only) |
-| `Whisper docker API 500 ...`                                  | Whisper container errored — check `docker logs caption-whisper` / `whisper-asr`                                         |
-| `Local whisper failed ("whisper")`                            | No local binary and mode is `cli` — use docker (default) instead                                                        |
-| `Invalid JSON response from Ollama`                           | Small LLM didn’t obey JSON format — retry, or use a bigger model                                                        |
-| `curl: (7) Failed to connect :3000/3001`                      | Server not up — `docker ps`, `docker logs caption-cloud-server/caption-local-server`                                    |
-| `429 Server is busy / Rate limit exceeded / Daily demo limit` | `ratelimit.js` limits — wait or restart server to reset in-memory counters                                              |
-| `413 File too large`                                          | Over 30 MB — compress or trim video                                                                                     |
-| `404 Job not found or expired`                                | Download after 10 min TTL or wrong base URL (`:3000` vs `:3001`)                                                        |
-| Web `Backend server is unreachable`                           | No server on expected port — start compose or set `VITE_API_URL`                                                        |
-| `OLLAMA_HOST` `127.0.0.1` fails from container                | Inside compose use `http://host.docker.internal:11434` (default); `127.0.0.1` is only for host CLI/dev                  |
+| Output                                                        | Meaning / fix                                                                                                                                           |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Usage: caption ...` + exit 1                                 | Missing input file argument                                                                                                                             |
+| `Error: unknown provider "x"`                                 | Use `groq` or `ollama`                                                                                                                                  |
+| `Error: unsupported format ".txt"`                            | Extension not in `mp4, mkv, webm, avi, mov`                                                                                                             |
+| `Error: file not found`                                       | Input path is wrong                                                                                                                                     |
+| `Error: ffmpeg is not installed`                              | Install ffmpeg + ffprobe (host runs only)                                                                                                               |
+| `Error: input file has no audio track`                        | Video has no audio stream                                                                                                                               |
+| `GROQ_API_KEY is not set.`                                    | Cloud: set in `.env` (compose/servers) or `GROQ_API_KEY=...` prefix (CLI)                                                                               |
+| `Failed to transliterate segment N: 400 ...`                  | LLM rejected that batch — segment keeps original script, output still completes                                                                         |
+| `Whisper docker API unreachable at ...`                       | Whisper container not running — `docker compose --profile local up -d whisper` (compose) or `docker run ...` (CLI-only)                                 |
+| `Whisper docker API 500 ...`                                  | Whisper container errored — check `docker logs caption-whisper` / `whisper-asr`                                                                         |
+| `Local whisper failed ("whisper")`                            | No local binary and mode is `cli` — use docker (default) instead                                                                                        |
+| `Invalid JSON response from Ollama`                           | Small LLM didn’t obey JSON format — retry, or use a bigger model                                                                                        |
+| `curl: (7) Failed to connect :3000/3001`                      | Server not up — `docker ps`, `docker logs caption-cloud-server/caption-local-server`                                                                    |
+| `429 Server is busy / Rate limit exceeded / Daily demo limit` | Concurrency/quota guard — body is `{error, selfHost, retryAfterSeconds}` + `Retry-After` header. Wait, or self-host with your own key for unlimited use |
+| `413 File too large`                                          | Over 30 MB — compress or trim video                                                                                                                     |
+| `404 Job not found or expired`                                | Download after 10 min TTL or wrong base URL (`:3000` vs `:3001`)                                                                                        |
+| Web `Backend server is unreachable`                           | No server on expected port — start compose or set `VITE_API_URL`                                                                                        |
+| `OLLAMA_HOST` `127.0.0.1` fails from container                | Inside compose use `http://host.docker.internal:11434` (default); `127.0.0.1` is only for host CLI/dev                                                  |
 
 ## Stop / clean
 
