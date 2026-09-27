@@ -4,8 +4,32 @@ import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import { runPipeline, SUPPORTED_EXTENSIONS, MAX_FILE_SIZE } from "@caption/core";
-import { checkRateLimit, trackJob, releaseJob } from "./ratelimit.js";
+import { tryAcquire, releaseJob } from "./concurrency.js";
+import { checkQuota } from "./quota.js";
 import { saveJob, getJob } from "./jobs.js";
+
+const SELF_HOST_MESSAGE =
+  "This is a small demo (free Groq tier, 1GB host). " +
+  "For unlimited use, clone the repo and run with your own GROQ_API_KEY.";
+
+function send429(res, { reason, retryAfterSeconds }) {
+  if (retryAfterSeconds) res.setHeader("Retry-After", String(retryAfterSeconds));
+  res.status(429).json({
+    error: reason,
+    selfHost: SELF_HOST_MESSAGE,
+    ...(retryAfterSeconds ? { retryAfterSeconds } : {}),
+  });
+}
+
+function cleanupUpload(req) {
+  if (req.file) {
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch {
+      /* ignore */
+    }
+  }
+}
 
 function sendEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -78,27 +102,40 @@ export function createCaptionServer(providers) {
       res.status(404).json({ error: "Job not found or expired." });
       return;
     }
-    res.download(job.outputPath, "captioned.mp4");
+    // Inline (not attachment) so browsers preview it in <video> instead of
+    // force-downloading. sendFile keeps Accept-Ranges, so seeking works.
+    // The `download` attribute on the UI's anchor still force-saves.
+    res.sendFile(path.resolve(job.outputPath), {
+      headers: {
+        "Content-Type": "video/mp4",
+        "Content-Disposition": 'inline; filename="captioned.mp4"',
+      },
+    });
   });
 
   async function handleCaption(req, res) {
     const ip = req.ip || req.socket.remoteAddress || "unknown";
 
-    const limit = checkRateLimit(ip);
-    if (!limit.allowed) {
-      if (req.file) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch {
-          /* ignore */
-        }
-      }
-      res.status(429).json({ error: limit.reason });
+    if (!req.file) {
+      res.status(400).json({ error: "No video file provided." });
       return;
     }
 
-    if (!req.file) {
-      res.status(400).json({ error: "No video file provided." });
+    const slot = tryAcquire();
+    if (!slot.allowed) {
+      cleanupUpload(req);
+      send429(res, {
+        reason: "Server is busy processing other videos. Please try again in a couple of minutes.",
+        retryAfterSeconds: slot.retryAfterSeconds,
+      });
+      return;
+    }
+
+    const quota = checkQuota(ip);
+    if (!quota.allowed) {
+      cleanupUpload(req);
+      releaseJob();
+      send429(res, { reason: quota.reason, retryAfterSeconds: quota.retryAfterSeconds });
       return;
     }
 
@@ -120,8 +157,6 @@ export function createCaptionServer(providers) {
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
-
-    trackJob();
 
     try {
       const outputPath = path.join(jobDir, "output.mp4");
